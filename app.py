@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from openai import OpenAI
+import openai
 from dotenv import load_dotenv
 import os
 
@@ -16,7 +16,7 @@ api_key = os.getenv('OPENAI_API_KEY')
 if not api_key:
     raise ValueError('OPENAI_API_KEY environment variable is not set')
 
-client = OpenAI(api_key=api_key)
+openai.api_key = api_key
 
 @app.route('/api/hello', methods=['POST'])
 def hello_world():
@@ -31,7 +31,7 @@ def analyze_text():
         text = data.get('text', '')
         
         # Llamada a OpenAI
-        completion = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "Eres un asistente médico especializado en cardiología. Analiza el siguiente texto y proporciona un resumen conciso."},
@@ -39,7 +39,7 @@ def analyze_text():
             ]
         )
         
-        analysis = completion.choices[0].message.content
+        analysis = response.choices[0].message.content
         return jsonify({"analysis": analysis})
         
     except Exception as e:
