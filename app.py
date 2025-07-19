@@ -34,7 +34,7 @@ def analyze_text():
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "Eres un asistente médico especializado en cardiología. Analiza el siguiente texto y proporciona un resumen conciso."},
+                {"role": "system", "content": "Eres un cardiólogo experto. Analiza el siguiente texto médico y proporciona un análisis estructurado que incluya:\n1. Síntomas principales\n2. Posibles diagnósticos diferenciales ordenados por probabilidad\n3. Nivel de urgencia (Bajo/Medio/Alto)\n4. Recomendaciones inmediatas\n\nMantén el análisis conciso pero informativo."},
                 {"role": "user", "content": text}
             ]
         )
