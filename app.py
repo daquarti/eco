@@ -12,7 +12,11 @@ app = Flask(__name__)
 CORS(app)
 
 # Configurar OpenAI
-client = OpenAI()
+api_key = os.getenv('OPENAI_API_KEY')
+if not api_key:
+    raise ValueError('OPENAI_API_KEY environment variable is not set')
+
+client = OpenAI(api_key=api_key)
 
 @app.route('/api/hello', methods=['POST'])
 def hello_world():
