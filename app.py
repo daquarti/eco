@@ -6,7 +6,7 @@ CORS(app)
 
 @app.route('/api/hello', methods=['POST'])
 def hello_world():
-    response = jsonify({"message": "Hola mundo"})
+    response = jsonify({"message": "Hola mundo desde el backend en Render!"})
     response.headers.add('Content-Type', 'application/json')
     return response
 
