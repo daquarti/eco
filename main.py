@@ -14,6 +14,10 @@ from aux_calculations import expand_dict_with_lists_inplace, calc_e_e_stress
 
 app = FastAPI()
 
+@app.get("/")
+def root():
+    return {"message": "API eco3 está activa"}
+
 # Permitir CORS para el frontend
 app.add_middleware(
     CORSMiddleware,
