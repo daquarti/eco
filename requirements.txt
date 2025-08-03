@@ -13,14 +13,4 @@ gunicorn==20.1.0
 openai==0.28.0
 python-dotenv==1.0.0
 python-docx==0.8.11
-python-docx==0.8.11
 Pillow==10.0.0
-=======
-fastapi
-uvicorn
-docxtpl
-docx2txt
-python-docx
-Pillow
-python-multipart
->>>>>>> 76daf16 (Initial commit: backend cardiology for cloud deploy)
