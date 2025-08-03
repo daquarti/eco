@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: eco-extract-api
+    env: python
+    plan: free
+    buildCommand: ""
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.10"
+    
