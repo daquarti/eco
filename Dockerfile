@@ -1,6 +1,12 @@
 # Utiliza una imagen oficial de Python 3.10
 FROM python:3.10-slim
 
+# Actualizar paquetes e instalar LibreOffice para conversión .doc a .docx
+RUN apt-get update && apt-get install -y \
+    libreoffice \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
 # Establece el directorio de trabajo
 WORKDIR /app
 

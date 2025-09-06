@@ -45,12 +45,21 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
         import subprocess
         soffice_cmd = shutil.which('soffice')
         if not soffice_cmd:
-            # Intentar ruta típica de Mac
-            mac_path = '/Applications/LibreOffice.app/Contents/MacOS/soffice'
-            if os.path.exists(mac_path):
-                soffice_cmd = mac_path
-            else:
-                raise HTTPException(status_code=500, detail="No se encontró 'soffice' en el PATH ni en /Applications/LibreOffice.app/Contents/MacOS/soffice. Instala LibreOffice o agrega 'soffice' al PATH.")
+            # Intentar rutas típicas según el sistema operativo
+            possible_paths = [
+                '/Applications/LibreOffice.app/Contents/MacOS/soffice',  # macOS
+                '/usr/bin/soffice',  # Linux (Docker/Render)
+                '/usr/local/bin/soffice',  # Linux alternativo
+                'C:\\Program Files\\LibreOffice\\program\\soffice.exe'  # Windows
+            ]
+            
+            for path in possible_paths:
+                if os.path.exists(path):
+                    soffice_cmd = path
+                    break
+            
+            if not soffice_cmd:
+                raise HTTPException(status_code=500, detail="LibreOffice no encontrado. Instala LibreOffice para procesar archivos .doc")
         converted_path = input_path + 'x'
         try:
             print(f"[INFO] Intentando convertir .doc a .docx usando: {soffice_cmd}")
