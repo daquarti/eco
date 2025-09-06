@@ -72,15 +72,28 @@ def get_measure_table(doc)->'docx.table.Table | None':
     '''
     Accepts word docx and extracts the table object where the measurements are
     '''
-    for table in doc.tables:
-        if any(cell.text == 'Measure' for row in table.rows for cell in row.cells):
+    print("[DEBUG] get_measure_table: Searching for measurements table...")
+    for i, table in enumerate(doc.tables):
+        print(f"[DEBUG] Table {i}: {len(table.rows)} rows")
+        for j, row in enumerate(table.rows[:2]):  # Check first 2 rows
+            for k, cell in enumerate(row.cells):
+                if cell.text.strip():
+                    print(f"[DEBUG]   [{j},{k}]: {repr(cell.text)}")
+        # More flexible search for measure table
+        if any('measure' in cell.text.lower() for row in table.rows for cell in row.cells):
+            print(f"[DEBUG] Found measurements table at index {i}")
             return table
+    print("[DEBUG] No measurements table found")
     return None
 
 def get_mot_table(doc)->'docx.table.Table | None':
-    for table in doc.tables:
-        if any(cell.text == 'WMS' for row in table.rows for cell in row.cells):
+    print("[DEBUG] get_mot_table: Searching for WMS table...")
+    for i, table in enumerate(doc.tables):
+        # More flexible search for WMS table
+        if any('wms' in cell.text.lower() for row in table.rows for cell in row.cells):
+            print(f"[DEBUG] Found WMS table at index {i}")
             return table
+    print("[DEBUG] No WMS table found")
     return None
 
 def mot_extractor(table)->dict:
