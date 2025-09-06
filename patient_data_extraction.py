@@ -20,7 +20,7 @@ def extract_patient_info(doc)->dict:
         table=doc.tables[1]
         for row in table.rows[1:]:
             for cell in row.cells:
-                if cell.text.lower().strip() not in data:  
+                if cell.text.lower().strip() not in data and ':' in cell.text:  
                     key,value=cell.text.split(':')
                     key=key.strip().replace(' ','_')
                     value=value.strip().replace('  ',' ')
