@@ -8,7 +8,7 @@ def is_float(s:str)->bool:
     try:
         float(s)
         return True
-    except ValueError:
+    except (ValueError, TypeError):
         return False 
 
 def expand_dict_with_lists_inplace(input_dict: dict)->None:
@@ -40,7 +40,7 @@ def expand_dict_with_lists_inplace(input_dict: dict)->None:
     # Update the original dictionary with the new items
     input_dict.update(new_items)
 
-def calc_e_e_stress(dic: dict)-> 'rel E/e avg rep and stress':
+def calc_e_e_stress(dic: dict)-> "Tuple[Tuple[int|str, int|str], Tuple[int, int]]":
     mv_e_0=(dic.get('MV_Vel_E_0',0))*100
     mv_e_1=(dic.get('MV_Vel_E_1',0))*100
     med_e_0=dic.get('Med_Vel_E_0',0)
@@ -70,7 +70,7 @@ def remove_signs(dic:dict)-> dict:
                    }
     return dic_without_signs
 
-def convert_to_int(dic):
+def convert_to_int(dic:dict)-> dict:
     '''
     accepts a dictionary and converts stings to floats, if they are on the key_to_round list,
     they are rounded and transformed to int
@@ -184,15 +184,6 @@ def mass_conc(text_mass, text_rwt):
 
 # In[4]:
 
-
-def mass_conc(text_mass, text_rwt):
-    conc=text_rwt
-    if text_mass !='Índice de masa dentro del parámetros de la normalidad':
-        conc=text_mass+text_rwt
-    return conc
-text_mass='a '
-text_rwt=''
-mass_conc(text_mass, text_rwt)
 
 
 # In[5]:

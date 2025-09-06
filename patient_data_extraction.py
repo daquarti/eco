@@ -16,21 +16,17 @@ def extract_patient_info(doc)->dict:
     '''
     data = {}
     #itero sobre las tablas del documento
-    for index_table,table in enumerate(doc.tables):
-        #tabla 1 es la que contiene estos datos
-        if index_table==1:
-            for row_index, row in enumerate(table.rows):
-                if row_index>0:
-                    for cell in row.cells:
-                        # Solo procesar si la celda contiene ':'
-                        if ':' in cell.text:
-                            key = cell.text.split(':')[0].strip().replace(' ', '_')
-                            try:
-                                value = cell.text.split(':', 1)[1].strip().replace('  ', ' ')
-                            except IndexError:
-                                value = ''
-                            if key.lower() not in data:
-                                data[key] = value
+    try:
+        table=doc.tables[1]
+        for row in table.rows[1:]:
+            for cell in row.cells:
+                if cell.text.lower().strip() not in data:  
+                    key,value=cell.text.split(':')
+                    key=key.strip().replace(' ','_')
+                    value=value.strip().replace('  ',' ')
+                    data[key]=value      
+    except IndexError as e:
+        print(f'{e} error al extraer datos del paciente')      
     return data
 
 
@@ -62,39 +58,39 @@ def dic_cleaning(data)->dict:
     '''
 
     for key, value in data.items():
-        if len(value) < 2:
-            value = value[0]
-            data[key]=value
-        if isinstance(value,list):
-            key_in_value=[v for v in value if v in data.keys()]#get the key
-            if key_in_value:
-                index=value.index(key_in_value[0])#get the index
-                data[key]=value[:index][0]#get the values uptothe index
+        if isinstance(value, list):
+            if len(value) == 1:
+                data[key] = value[0]
+            else:
+                key_in_value = [v for v in value if v in data]
+                if key_in_value:
+                    index = value.index(key_in_value[0])
+                    data[key] = value[:index][0] if index > 0 else ''
     return data
 
-def get_measure_table(doc)->'table':
+def get_measure_table(doc)->'docx.table.Table | None':
     '''
     Accepts word docx and extracts the table object where the measurements are
     '''
-    #itero sobre las tablas del documento
-    for index_table,table in enumerate(doc.tables):
-        for row_index, row in enumerate(table.rows):
-            for index_cell,cell in enumerate(row.cells):
-                if cell.text=='Measure':
-                    return table
+    for table in doc.tables:
+        if any(cell.text == 'Measure' for row in table.rows for cell in row.cells):
+            return table
+    return None
 
-def get_mot_table(doc)->'table':
-    for index_table,table in enumerate(doc.tables):
-        for row_index, row in enumerate(table.rows):
-            for index_cell,cell in enumerate(row.cells):
-                if cell.text=='WMS':
-                    return table
+def get_mot_table(doc)->'docx.table.Table | None':
+    for table in doc.tables:
+        if any(cell.text == 'WMS' for row in table.rows for cell in row.cells):
+            return table
+    return None
 
 def mot_extractor(table)->dict:
 
-    '''
-    Extrae las puntaciones y los nombres de los segmentos en los score de motilidad del ecostress
-    '''
+    """
+    Extracts wall motion scores from a nested table.
+
+    Returns:
+        dict: With structure {'mot': [{'key': segment_name, 'motilidad': [rest, peak, recovery]}]}
+    """
 
     mot={}
     for index_r, row in enumerate(table.rows):
@@ -112,19 +108,22 @@ def mot_extractor(table)->dict:
                                 if index_c == 5:
                                     key = inner_cell.text.lower()
                                 if 5 < index_c <= 8 and key:
-                                    values.append(int(inner_cell.text))
-
+                                    try:
+                                        values.append(int(inner_cell.text))
+                                    except ValueError as e:
+                                        print(f'{e} no se pudo convertir motilidad en segmento {key}')
+                                        values.append(inner_cell.text)
                             if key and values:  # Store the key-value pair only if both key and values exist
                                 mot[key] = values
-                                mot_conv = {'mot': [{'key': k, 'motilidad': v} for k, v in mot.items()]}                
+                                            
 
-    return mot_conv 
+    return {'mot': [{'key': k, 'motilidad': v} for k, v in mot.items()]} 
 
 def get_measurements(table,gender):
     data={}
     units=['mm','cm','ml','g','ms','mmHg','cm²','cm/s','ml/s','cm²','m²','ml/m²','cm²/m²','g/m²']
-    for row_index, row in enumerate(table.rows):
-        for index_cell,cell in enumerate(row.cells):
+    for row in table.rows:
+        for cell in row.cells:
             for st in cell.tables:
                 for index_rs,rs in enumerate(st.rows):
                     if index_rs>1:
