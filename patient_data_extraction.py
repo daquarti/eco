@@ -12,21 +12,60 @@ from aux_calculations import convert_to_int,conv_vel_a_m,text_mass_hypertrophy,t
 def extract_patient_info(doc)->dict:
     '''
     Accepts word docx and extracts info from the first table where the patient data resides
-    returns a dictionary
+    returns a dictionary. Enhanced for LibreOffice-converted documents.
     '''
     data = {}
-    #itero sobre las tablas del documento
-    try:
-        table=doc.tables[1]
-        for row in table.rows[1:]:
-            for cell in row.cells:
-                if cell.text.lower().strip() not in data and ':' in cell.text:  
-                    key,value=cell.text.split(':')
-                    key=key.strip().replace(' ','_')
-                    value=value.strip().replace('  ',' ')
-                    data[key]=value      
-    except IndexError as e:
-        print(f'{e} error al extraer datos del paciente')      
+    print(f"[DEBUG] extract_patient_info: Total tables found: {len(doc.tables)}")
+    
+    # Try multiple tables in case LibreOffice changes table order
+    table_indices_to_try = [1, 0, 2] if len(doc.tables) > 2 else [1, 0] if len(doc.tables) > 1 else [0]
+    
+    for table_idx in table_indices_to_try:
+        if table_idx >= len(doc.tables):
+            continue
+            
+        try:
+            table = doc.tables[table_idx]
+            print(f"[DEBUG] Trying table {table_idx}: {len(table.rows)} rows, {len(table.rows[0].cells) if table.rows else 0} cols")
+            
+            table_data = {}
+            for i, row in enumerate(table.rows):
+                for j, cell in enumerate(row.cells):
+                    cell_text = cell.text.strip()
+                    if cell_text:
+                        print(f"[DEBUG] Table {table_idx}[{i},{j}]: {repr(cell_text)}")
+                        
+                        # Look for key:value patterns with flexible parsing
+                        if ':' in cell_text:
+                            try:
+                                # Handle multiple colons by taking first split
+                                parts = cell_text.split(':', 1)
+                                if len(parts) == 2:
+                                    key = parts[0].strip().replace(' ', '_').replace('\n', '').replace('\t', '')
+                                    value = parts[1].strip().replace('  ', ' ').replace('\n', ' ').replace('\t', ' ')
+                                    
+                                    # Skip empty values and very short keys
+                                    if value and len(key) > 1 and key.lower() not in ['', 'table', 'cell']:
+                                        table_data[key] = value
+                                        print(f"[DEBUG] Extracted from table {table_idx}: {key} = {value}")
+                            except Exception as e:
+                                print(f"[DEBUG] Error parsing cell '{cell_text}': {e}")
+                                
+            # If we found patient data, use this table
+            if any(key.lower() in ['name', 'patient_id', 'exam_date', 'gender', 'age'] 
+                   for key in table_data.keys()):
+                data.update(table_data)
+                print(f"[DEBUG] Found patient data in table {table_idx}")
+                break
+            elif table_data:
+                # Keep data from this table but continue searching
+                data.update(table_data)
+                
+        except (IndexError, AttributeError) as e:
+            print(f"[DEBUG] Error accessing table {table_idx}: {e}")
+            continue
+    
+    print(f"[DEBUG] Final patient data: {data}")
     return data
 
 
@@ -137,9 +176,14 @@ def mot_extractor(table)->dict:
 def get_measurements(table,gender):
     data={}
     units=['mm','cm','ml','g','ms','mmHg','cm²','cm/s','ml/s','cm²','m²','ml/m²','cm²/m²','g/m²']
-    for row in table.rows:
-        for cell in row.cells:
-            for st in cell.tables:
+    
+    print(f"[DEBUG] get_measurements: Processing table with {len(table.rows)} rows")
+    
+    for row_idx, row in enumerate(table.rows):
+        print(f"[DEBUG] Processing row {row_idx}: {len(row.cells)} cells")
+        for cell_idx, cell in enumerate(row.cells):
+            print(f"[DEBUG] Cell [{row_idx},{cell_idx}]: {len(cell.tables)} nested tables, text: {repr(cell.text[:100])}")
+            for st_idx, st in enumerate(cell.tables):
                 for index_rs,rs in enumerate(st.rows):
                     if index_rs>1:
                         elements=[]
