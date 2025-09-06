@@ -64,13 +64,12 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
         try:
             print(f"[INFO] Intentando convertir .doc a .docx usando: {soffice_cmd}")
             print(f"[INFO] Comando: {soffice_cmd} --headless --convert-to docx --outdir {tmpdir} {input_path}")
-            # Use better LibreOffice parameters for preserving table structure
+            # Use LibreOffice with better parameters but keep it simple
             result = subprocess.run([
                 soffice_cmd, 
                 '--headless', 
-                '--convert-to', 'docx:"Office Open XML Text"',
-                '--outdir', tmpdir, 
-                '--infilter=MS Word 97/2000/XP/2003',
+                '--convert-to', 'docx',
+                '--outdir', tmpdir,
                 input_path
             ], capture_output=True, text=True, timeout=60)
             print(f"[INFO] stdout: {result.stdout}")
