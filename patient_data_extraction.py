@@ -6,6 +6,7 @@ import csv
 from PIL import Image
 from io import BytesIO
 from aux_calculations import convert_to_int,conv_vel_a_m,text_mass_hypertrophy,text_diam_LV,text_atrium,remove_signs
+import re
 
 
 #extraer los datos de las tablas
@@ -179,6 +180,80 @@ def get_measurements(table,gender):
     
     print(f"[DEBUG] get_measurements: Processing table with {len(table.rows)} rows")
     
+    # Check if this is a LibreOffice flattened table (no nested tables)
+    has_nested_tables = any(len(cell.tables) > 0 for row in table.rows for cell in row.cells)
+    print(f"[DEBUG] Table has nested tables: {has_nested_tables}")
+    
+    if not has_nested_tables:
+        # Handle LibreOffice flattened structure
+        print("[DEBUG] Using LibreOffice flat table parsing")
+        return parse_flattened_measurements(table, gender)
+    else:
+        # Use original nested table parsing
+        print("[DEBUG] Using original nested table parsing")
+        return parse_nested_measurements(table, gender)
+
+def parse_flattened_measurements(table, gender):
+    """Parse measurements from LibreOffice-flattened table structure"""
+    data = {}
+    print(f"[DEBUG] Parsing flattened table: {len(table.rows)} rows")
+    
+    # Map of common medical terms to standardized keys
+    field_mapping = {
+        'diámetro diastólico del vi': 'LVIDd',
+        'diámetro sistólico del vi': 'LVIDs', 
+        'espesor diastólico del septum': 'IVSd',
+        'espesor diastólico de la pared': 'LVPWd',
+        'masa vi': 'LV_Mass',
+        'raíz de aorta': 'Aortic_Root',
+        'aurícula izquierda': 'LA_Area',
+        'aurícula derecha': 'RA_Area',
+        'diámetro basal vd': 'RV_Basal',
+        'fac%': 'FAC',
+        'tsvi': 'TSVI'
+    }
+    
+    for row_idx, row in enumerate(table.rows):
+        for cell_idx, cell in enumerate(row.cells):
+            cell_text = cell.text.strip().lower()
+            
+            if cell_text:
+                print(f"[DEBUG] Checking cell [{row_idx},{cell_idx}]: {repr(cell_text)}")
+                
+                # Look for medical field names
+                for pattern, key in field_mapping.items():
+                    if pattern in cell_text:
+                        # Look for value in adjacent cells
+                        value = None
+                        unit = None
+                        
+                        # Check right cell for value
+                        if cell_idx + 1 < len(row.cells):
+                            right_cell = row.cells[cell_idx + 1].text.strip()
+                            if right_cell and is_numeric_value(right_cell):
+                                value = right_cell
+                                print(f"[DEBUG] Found value for {key}: {value}")
+                        
+                        # Check if there's a unit in the same or nearby cells
+                        for check_idx in range(max(0, cell_idx-1), min(len(row.cells), cell_idx+3)):
+                            check_text = row.cells[check_idx].text.strip()
+                            if any(u in check_text for u in ['mm', 'cm', 'ml', 'g', 'mmHg', 'm²', 'cm²']):
+                                unit = extract_unit(check_text)
+                                break
+                        
+                        if value:
+                            data[key] = {'value': value, 'unit': unit or ''}
+                            print(f"[DEBUG] Added measurement: {key} = {value} {unit or ''}")
+                        break
+    
+    print(f"[DEBUG] Flattened parsing extracted: {data}")
+    return data
+
+def parse_nested_measurements(table, gender):
+    """Original nested table parsing (for non-LibreOffice documents)"""
+    data={}
+    units=['mm','cm','ml','g','ms','mmHg','cm²','cm/s','ml/s','cm²','m²','ml/m²','cm²/m²','g/m²']
+    
     for row_idx, row in enumerate(table.rows):
         print(f"[DEBUG] Processing row {row_idx}: {len(row.cells)} cells")
         for cell_idx, cell in enumerate(row.cells):
@@ -207,6 +282,7 @@ def get_measurements(table,gender):
                                 value=cs.text.strip()
                                 values.append(value)
                                 data[key+subkey]=values
+    
     data=update_dictionary(data) 
     data=dic_cleaning(data)
     data=convert_to_int(data)
@@ -277,6 +353,27 @@ def image_extractor(doc, template, tipo, image_width=Cm(8), image_height=Cm(5.36
 
     return image_dict
 
+def is_numeric_value(text):
+    """Check if text contains a numeric value"""
+    if not text:
+        return False
+    # Remove common non-numeric characters and check if what remains is numeric
+    cleaned = re.sub(r'[^\d.,]', '', text.strip())
+    if not cleaned:
+        return False
+    try:
+        float(cleaned.replace(',', '.'))
+        return True
+    except ValueError:
+        return False
+
+def extract_unit(text):
+    """Extract unit from text"""
+    units = ['mm', 'cm', 'ml', 'g', 'mmHg', 'm²', 'cm²', 'cm/s', 'ml/s', 'ml/m²', 'cm²/m²', 'g/m²', 'ms']
+    for unit in units:
+        if unit in text:
+            return unit
+    return None
 
 #####
 
