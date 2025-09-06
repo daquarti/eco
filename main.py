@@ -97,7 +97,7 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
 
     try:
         doc = Document(doc_path)
-        template, tipo = template_selector(input_path)
+        template, tipo = template_selector(doc_path)
         info_pac = extract_patient_info(doc)
         image = image_extractor(doc, template, tipo=tipo)
         # Nombre de salida temporal
