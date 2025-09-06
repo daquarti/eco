@@ -45,9 +45,11 @@ def update_dictionary(dic:dict)->dict:
     for val in dic.values():
         for c in calc_list:
             if c in val:
-                key=val[val.index(c)]
-                value=val[val.index(c)+1]
-                updates[key]=value
+                index = val.index(c)
+                if index + 1 < len(val):  # Check bounds
+                    key=val[index]
+                    value=val[index+1]
+                    updates[key]=value
     dic.update(updates)
     return dic
 
