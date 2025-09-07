@@ -20,6 +20,30 @@ app = FastAPI()
 def root():
     return {"message": "API eco3 está activa"}
 
+@app.options("/generar_informes_multiples")
+def options_multiple():
+    return {"message": "CORS preflight OK"}
+
+@app.post("/debug_files")
+def debug_files(files: List[UploadFile] = File(...)):
+    """Debug endpoint to see what files are being received"""
+    file_info = []
+    for file in files:
+        info = {
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "size": len(file.file.read()) if hasattr(file.file, 'read') else "unknown"
+        }
+        file.file.seek(0)  # Reset file pointer
+        file_info.append(info)
+    
+    return {
+        "total_files": len(files),
+        "files": file_info,
+        "valid_files": len([f for f in files if f.filename.lower().endswith(('.doc', '.docx'))]),
+        "message": "Debug info - no processing done"
+    }
+
 # Permitir CORS para el frontend
 app.add_middleware(
     CORSMiddleware,
