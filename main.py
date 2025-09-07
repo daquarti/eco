@@ -40,25 +40,56 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
     with open(input_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # Si es .doc, convertir a .docx usando pypandoc (mejor preservación de estructuras)
+    # Si es .doc, convertir a .docx usando LibreOffice
     if input_path.lower().endswith('.doc'):
         try:
-            import pypandoc
             # Generar nombre para archivo convertido
             converted_filename = os.path.splitext(os.path.basename(input_path))[0] + '.docx'
             converted_path = os.path.join(tmpdir, converted_filename)
             
-            print(f"[INFO] Convirtiendo .doc a .docx usando pypandoc")
+            print(f"[INFO] Convirtiendo .doc a .docx usando LibreOffice")
             print(f"[INFO] Input: {input_path}")
             print(f"[INFO] Output: {converted_path}")
             
-            # Conversión con pypandoc preservando estructura
-            output = pypandoc.convert_file(
-                input_path, 
-                'docx', 
-                outputfile=converted_path,
-                extra_args=['--preserve-tabs']  # Preservar estructura de tablas
-            )
+            # Usar LibreOffice para la conversión inicial .doc -> .docx
+            import subprocess
+            
+            # Buscar LibreOffice en diferentes ubicaciones posibles
+            soffice_paths = [
+                'soffice',  # En PATH
+                '/usr/bin/soffice',
+                '/usr/local/bin/soffice',
+                '/opt/homebrew/bin/soffice',
+                '/Applications/LibreOffice.app/Contents/MacOS/soffice'  # macOS
+            ]
+            
+            soffice_cmd = None
+            for path in soffice_paths:
+                try:
+                    result = subprocess.run([path, '--version'], 
+                                          capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        soffice_cmd = path
+                        break
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    continue
+            
+            if not soffice_cmd:
+                raise Exception("No se encontró LibreOffice/soffice en el sistema")
+            
+            # Convertir usando LibreOffice
+            cmd = [
+                soffice_cmd,
+                '--headless',
+                '--convert-to', 'docx',
+                '--outdir', tmpdir,
+                input_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
+            if result.returncode != 0:
+                raise Exception(f"LibreOffice falló: {result.stderr}")
             
             # Verificar que el archivo se creó correctamente
             if not os.path.exists(converted_path):
@@ -72,10 +103,8 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
             
             doc_path = converted_path
             
-        except ImportError:
-            raise HTTPException(status_code=500, detail="pypandoc no está instalado. Se requiere para procesar archivos .doc")
         except Exception as e:
-            print(f"[ERROR] Error en la conversión pypandoc: {e}")
+            print(f"[ERROR] Error en la conversión: {e}")
             raise HTTPException(status_code=500, detail=f"Error convirtiendo archivo .doc a .docx: {str(e)}")
     else:
         doc_path = input_path
