@@ -194,11 +194,11 @@ def get_measurements(table,gender):
         return parse_nested_measurements(table, gender)
 
 def parse_flattened_measurements(table, gender):
-    """Parse measurements from LibreOffice-flattened table structure"""
+    """Parse measurements from LibreOffice-flattened table structure with enhanced detection"""
     data = {}
     print(f"[DEBUG] Parsing flattened table: {len(table.rows)} rows")
     
-    # Map of common medical terms to standardized keys
+    # Enhanced field mapping with more variations
     field_mapping = {
         'diámetro diastólico del vi': 'LVIDd',
         'diámetro sistólico del vi': 'LVIDs', 
@@ -210,44 +210,115 @@ def parse_flattened_measurements(table, gender):
         'aurícula derecha': 'RA_Area',
         'diámetro basal vd': 'RV_Basal',
         'fac%': 'FAC',
-        'tsvi': 'TSVI'
+        'tsvi': 'TSVI',
+        # Add velocity terms for second table
+        'vel pico': 'Vel_Peak',
+        'grad pico': 'Grad_Peak',
+        'aortica': 'Aortic_Vel',
+        'mitral': 'Mitral_Vel',
+        'tricúspide': 'Tricuspid_Vel',
+        'pulmonar': 'Pulmonary_Vel'
     }
     
+    # First pass: create a cell content map for cross-referencing
+    cell_map = {}
+    for row_idx, row in enumerate(table.rows):
+        for cell_idx, cell in enumerate(row.cells):
+            cell_text = cell.text.strip()
+            if cell_text:
+                cell_map[(row_idx, cell_idx)] = cell_text
+                print(f"[DEBUG] Cell map [{row_idx},{cell_idx}]: {repr(cell_text)}")
+    
+    # Second pass: enhanced value search
     for row_idx, row in enumerate(table.rows):
         for cell_idx, cell in enumerate(row.cells):
             cell_text = cell.text.strip().lower()
             
             if cell_text:
-                print(f"[DEBUG] Checking cell [{row_idx},{cell_idx}]: {repr(cell_text)}")
-                
                 # Look for medical field names
                 for pattern, key in field_mapping.items():
                     if pattern in cell_text:
-                        # Look for value in adjacent cells
-                        value = None
-                        unit = None
-                        
-                        # Check right cell for value
-                        if cell_idx + 1 < len(row.cells):
-                            right_cell = row.cells[cell_idx + 1].text.strip()
-                            if right_cell and is_numeric_value(right_cell):
-                                value = right_cell
-                                print(f"[DEBUG] Found value for {key}: {value}")
-                        
-                        # Check if there's a unit in the same or nearby cells
-                        for check_idx in range(max(0, cell_idx-1), min(len(row.cells), cell_idx+3)):
-                            check_text = row.cells[check_idx].text.strip()
-                            if any(u in check_text for u in ['mm', 'cm', 'ml', 'g', 'mmHg', 'm²', 'cm²']):
-                                unit = extract_unit(check_text)
-                                break
+                        value = find_associated_value(cell_map, row_idx, cell_idx, len(row.cells), len(table.rows))
                         
                         if value:
+                            unit = find_associated_unit(cell_map, row_idx, cell_idx, len(row.cells), len(table.rows))
                             data[key] = {'value': value, 'unit': unit or ''}
-                            print(f"[DEBUG] Added measurement: {key} = {value} {unit or ''}")
+                            print(f"[DEBUG] Enhanced extraction: {key} = {value} {unit or ''}")
                         break
     
-    print(f"[DEBUG] Flattened parsing extracted: {data}")
+    # Third pass: look for standalone numeric values that might be measurements
+    standalone_values = find_standalone_numeric_values(cell_map, len(table.rows))
+    if standalone_values:
+        print(f"[DEBUG] Found {len(standalone_values)} standalone numeric values")
+        for pos, value in standalone_values.items():
+            print(f"[DEBUG] Standalone value at {pos}: {value}")
+    
+    print(f"[DEBUG] Enhanced flattened parsing extracted: {data}")
     return data
+
+def find_associated_value(cell_map, row_idx, cell_idx, max_cols, max_rows):
+    """Find numeric value associated with a medical field using multiple search strategies"""
+    
+    # Strategy 1: Check immediate right cell
+    if (row_idx, cell_idx + 1) in cell_map:
+        right_text = cell_map[(row_idx, cell_idx + 1)]
+        if is_numeric_value(right_text):
+            return extract_numeric_value(right_text)
+    
+    # Strategy 2: Check same row, further right cells
+    for check_col in range(cell_idx + 2, min(cell_idx + 4, max_cols)):
+        if (row_idx, check_col) in cell_map:
+            check_text = cell_map[(row_idx, check_col)]
+            if is_numeric_value(check_text):
+                return extract_numeric_value(check_text)
+    
+    # Strategy 3: Check next row, same column and nearby
+    for check_row in range(row_idx + 1, min(row_idx + 3, max_rows)):
+        for check_col in range(max(0, cell_idx - 1), min(cell_idx + 3, max_cols)):
+            if (check_row, check_col) in cell_map:
+                check_text = cell_map[(check_row, check_col)]
+                if is_numeric_value(check_text):
+                    return extract_numeric_value(check_text)
+    
+    return None
+
+def find_associated_unit(cell_map, row_idx, cell_idx, max_cols, max_rows):
+    """Find unit associated with a medical field"""
+    units = ['mm', 'cm', 'ml', 'g', 'mmHg', 'm²', 'cm²', 'cm/s', 'ml/s', 'ml/m²', 'cm²/m²', 'g/m²', 'ms', '%']
+    
+    # Search in nearby cells for units
+    for check_row in range(max(0, row_idx - 1), min(row_idx + 3, max_rows)):
+        for check_col in range(max(0, cell_idx - 1), min(cell_idx + 4, max_cols)):
+            if (check_row, check_col) in cell_map:
+                check_text = cell_map[(check_row, check_col)]
+                for unit in units:
+                    if unit in check_text:
+                        return unit
+    return None
+
+def find_standalone_numeric_values(cell_map, max_rows):
+    """Find all numeric values in the table that might be measurements"""
+    standalone_values = {}
+    
+    for (row_idx, cell_idx), text in cell_map.items():
+        if is_numeric_value(text) and not any(char.isalpha() for char in text if char not in '.,'):
+            # This is a pure numeric value
+            numeric_val = extract_numeric_value(text)
+            if numeric_val and float(numeric_val) > 0:  # Positive meaningful values
+                standalone_values[(row_idx, cell_idx)] = numeric_val
+    
+    return standalone_values
+
+def extract_numeric_value(text):
+    """Extract the actual numeric value from text"""
+    if not text:
+        return None
+    # Extract numbers with decimals
+    import re
+    match = re.search(r'\d+(?:[.,]\d+)?', text.replace(',', '.'))
+    if match:
+        return match.group()
+    return None
 
 def parse_nested_measurements(table, gender):
     """Original nested table parsing (for non-LibreOffice documents)"""
