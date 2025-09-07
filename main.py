@@ -40,62 +40,42 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
     with open(input_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # Si es .doc, convertir a .docx usando libreoffice (más robusto que python-docx para .doc)
+    # Si es .doc, convertir a .docx usando pypandoc (mejor preservación de estructuras)
     if input_path.lower().endswith('.doc'):
-        import subprocess
-        soffice_cmd = shutil.which('soffice')
-        if not soffice_cmd:
-            # Intentar rutas típicas según el sistema operativo
-            possible_paths = [
-                '/Applications/LibreOffice.app/Contents/MacOS/soffice',  # macOS
-                '/usr/bin/soffice',  # Linux (Docker/Render)
-                '/usr/local/bin/soffice',  # Linux alternativo
-                'C:\\Program Files\\LibreOffice\\program\\soffice.exe'  # Windows
-            ]
-            
-            for path in possible_paths:
-                if os.path.exists(path):
-                    soffice_cmd = path
-                    break
-            
-            if not soffice_cmd:
-                raise HTTPException(status_code=500, detail="LibreOffice no encontrado. Instala LibreOffice para procesar archivos .doc")
-        converted_path = input_path + 'x'
         try:
-            print(f"[INFO] Intentando convertir .doc a .docx usando: {soffice_cmd}")
-            print(f"[INFO] Comando: {soffice_cmd} --headless --convert-to docx --outdir {tmpdir} {input_path}")
-            # Use LibreOffice with better parameters but keep it simple
-            result = subprocess.run([
-                soffice_cmd, 
-                '--headless', 
-                '--convert-to', 'docx',
-                '--outdir', tmpdir,
-                input_path
-            ], capture_output=True, text=True, timeout=60)
-            print(f"[INFO] stdout: {result.stdout}")
-            print(f"[INFO] stderr: {result.stderr}")
-            # Listar archivos en tmpdir tras conversión
-            print(f"[INFO] Archivos en {tmpdir} tras conversión: {os.listdir(tmpdir)}")
-            # Buscar cualquier archivo .docx en el tmpdir
-            docx_files = [f for f in os.listdir(tmpdir) if f.lower().endswith('.docx')]
-            print(f"[INFO] Archivos .docx encontrados en {tmpdir}: {docx_files}")
-            if not docx_files:
-                print(f"[ERROR] No se encontró ningún archivo .docx convertido. Archivos en tmpdir: {os.listdir(tmpdir)}")
-                raise Exception('No se pudo convertir el archivo .doc a .docx')
-            converted_path = os.path.join(tmpdir, docx_files[0])
-            print(f"[INFO] Usando archivo convertido: {converted_path}")
-            # Chequeo de existencia y tamaño
+            import pypandoc
+            # Generar nombre para archivo convertido
+            converted_filename = os.path.splitext(os.path.basename(input_path))[0] + '.docx'
+            converted_path = os.path.join(tmpdir, converted_filename)
+            
+            print(f"[INFO] Convirtiendo .doc a .docx usando pypandoc")
+            print(f"[INFO] Input: {input_path}")
+            print(f"[INFO] Output: {converted_path}")
+            
+            # Conversión con pypandoc preservando estructura
+            output = pypandoc.convert_file(
+                input_path, 
+                'docx', 
+                outputfile=converted_path,
+                extra_args=['--preserve-tabs']  # Preservar estructura de tablas
+            )
+            
+            # Verificar que el archivo se creó correctamente
             if not os.path.exists(converted_path):
-                print(f"[ERROR] El archivo convertido no existe. Archivos en tmpdir: {os.listdir(tmpdir)}")
-                raise Exception('El archivo .docx convertido no existe')
+                raise Exception('El archivo .docx convertido no se creó')
+            
             size = os.path.getsize(converted_path)
-            print(f"[INFO] Tamaño del archivo convertido: {size} bytes")
+            print(f"[INFO] Archivo convertido exitosamente: {size} bytes")
+            
             if size == 0:
-                print(f"[ERROR] El archivo convertido está vacío. Archivos en tmpdir: {os.listdir(tmpdir)}")
                 raise Exception('El archivo .docx convertido está vacío')
+            
             doc_path = converted_path
+            
+        except ImportError:
+            raise HTTPException(status_code=500, detail="pypandoc no está instalado. Se requiere para procesar archivos .doc")
         except Exception as e:
-            print(f"[ERROR] Error en la conversión: {e}")
+            print(f"[ERROR] Error en la conversión pypandoc: {e}")
             raise HTTPException(status_code=500, detail=f"Error convirtiendo archivo .doc a .docx: {str(e)}")
     else:
         doc_path = input_path
