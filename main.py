@@ -57,10 +57,21 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
     """
     Procesa un archivo individual y devuelve la ruta del archivo generado.
     """
+    print(f"[DEBUG] Processing file: {file.filename}")
+    print(f"[DEBUG] Content type: {file.content_type}")
+    print(f"[DEBUG] File size: {file.size if hasattr(file, 'size') else 'unknown'}")
+    
     if not (file.filename.lower().endswith(".docx") or file.filename.lower().endswith(".doc")):
         raise HTTPException(status_code=400, detail=f"El archivo {file.filename} debe ser .docx o .doc")
 
-    input_path = os.path.join(tmpdir, file.filename)
+    # Extract just the filename without path for security and compatibility
+    safe_filename = os.path.basename(file.filename)
+    input_path = os.path.join(tmpdir, safe_filename)
+    
+    print(f"[DEBUG] Original filename: {file.filename}")
+    print(f"[DEBUG] Safe filename: {safe_filename}")
+    print(f"[DEBUG] Input path: {input_path}")
+    
     with open(input_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
@@ -187,7 +198,7 @@ def generar_informe(file: UploadFile = File(...)):
         )
 
 @app.post("/generar_informes_multiples")
-def generar_informes_multiples(files: List[UploadFile] = File(...)):
+async def generar_informes_multiples(files: List[UploadFile] = File(...)):
     """
     Recibe múltiples archivos Word del ecógrafo y devuelve un archivo ZIP con todos los informes generados.
     """
