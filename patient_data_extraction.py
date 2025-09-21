@@ -1,5 +1,4 @@
 
-
 from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Cm
 import csv
@@ -7,6 +6,7 @@ from PIL import Image
 from io import BytesIO
 from aux_calculations import convert_to_int,conv_vel_a_m,text_mass_hypertrophy,text_diam_LV,text_atrium,remove_signs
 import re
+import os
 
 
 #extraer los datos de las tablas
@@ -508,6 +508,62 @@ def delta_motility(dic: dict)-> dict:
 
 # In[ ]:
 
+
+def process_pdf_images(image_paths, template, tipo, image_width=Cm(8), image_height=Cm(5.36)) -> dict:
+    """
+    Processes images extracted from PDF for use with DocxTemplate.
+
+    Args:
+        image_paths: Dictionary of image paths from PDF extraction
+        template: DocxTemplate instance
+        tipo: Template type
+        image_width: Default image width
+        image_height: Default image height
+
+    Returns:
+        Dictionary with InlineImage objects
+    """
+    image_dict = {}
+
+    for name, path in image_paths.items():
+        if os.path.exists(path):
+            with open(path, 'rb') as f:
+                image_data = f.read()
+
+            image = Image.open(BytesIO(image_data))
+            compressed_image = BytesIO()
+
+            # Extract image number from name if possible
+            image_number = 0
+            match = re.search(r'img_(\d+)', name)
+            if match:
+                image_number = int(match.group(1))
+
+            # Handle stress template special cases
+            if tipo == 'stress' and image_number in [1, 2]:
+                compressed_image = BytesIO(image_data)
+                compressed_image.seek(0)
+                if image_number == 1:
+                    image_dict[f"image{image_number}"] = InlineImage(template,
+                                                     compressed_image,
+                                                     width=Cm(16.23), height=Cm(8.22))
+                else:
+                    image_dict[f"image{image_number}"] = InlineImage(template,
+                                                     compressed_image,
+                                                     width=Cm(16.23), height=Cm(6.39))
+            else:
+                # Convert to JPEG if needed
+                if image.format != 'JPEG':
+                    image = image.convert("RGB")
+                image.save(compressed_image, format='JPEG', quality=85)
+                compressed_image.seek(0)
+
+                image_dict[f"image{image_number if image_number else len(image_dict)+1}"] = InlineImage(
+                    template, compressed_image, width=image_width, height=image_height)
+
+    # Format for template
+    image_dict = {'image': [{'key': k, 'image': v} for k, v in image_dict.items()]}
+    return image_dict
 
 def generate_motility_report(mot):
     """

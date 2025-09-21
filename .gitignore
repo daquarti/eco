@@ -1,15 +1,11 @@
 # Environment variables
 .env
 
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -22,98 +18,61 @@ lib64/
 parts/
 sdist/
 var/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environment
-venv/
-ENV/
-env/
-
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints
-
-# Pytest cache
-.pytest_cache/
-
-# MacOS
-.DS_Store
-
-# Temporary files
-*.tmp
-*.log
-*.swp
-*~
-
-# Output reports
-*.docx
-!auto card.docx
-!auto art.docx
-!auto stress.docx
-!auto vc.docx
-!auto ven.docx
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
->>>>>>> 76daf16 (Initial commit: backend cardiology for cloud deploy)
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-<<<<<<< HEAD
 wheels/
-=======
->>>>>>> 76daf16 (Initial commit: backend cardiology for cloud deploy)
 *.egg-info/
 .installed.cfg
 *.egg
 
-<<<<<<< HEAD
-# Virtual Environment
+# Virtual environments
 venv/
-ENV/
-=======
-# Virtual environment
-venv/
-ENV/
 env/
+ENV/
 
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Pytest cache
-.pytest_cache/
-
-# MacOS
+# OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test files and test data
+test_*.py
+*_test.py
+tests/
+proyecto gusti/
+*.pdf
 
 # Temporary files
+tmp/
+temp/
 *.tmp
-*.log
-*.swp
-*~
 
-# Output reports
+# Application specific
+generated_reports/
+uploads/
+
+# Output reports (keep templates)
 *.docx
 !auto card.docx
 !auto art.docx
 !auto stress.docx
 !auto vc.docx
 !auto ven.docx
->>>>>>> 76daf16 (Initial commit: backend cardiology for cloud deploy)
+
+# Jupyter
+.ipynb_checkpoints
+
+# Pytest
+.pytest_cache/

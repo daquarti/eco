@@ -4,3 +4,13 @@ services:
     env: docker
     plan: free
     autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: GOOGLE_API_KEY
+        sync: false  # Set this in Render dashboard
+    dockerCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
+    scaling:
+      minInstances: 1
+      maxInstances: 1

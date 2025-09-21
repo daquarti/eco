@@ -1,26 +1,41 @@
-# Utiliza una imagen oficial de Python 3.10
+# Use Python 3.10 slim image
 FROM python:3.10-slim
 
-# Actualizar paquetes e instalar LibreOffice para conversión .doc a .docx
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV ENVIRONMENT=production
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     libreoffice \
     fonts-liberation \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Establece el directorio de trabajo
+# Set work directory
 WORKDIR /app
 
-# Copia los archivos de dependencias primero para aprovechar cache de Docker
+# Install Python dependencies
 COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Instala las dependencias
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copia el resto del código
+# Copy application code
 COPY . .
 
-# Expone el puerto que usará Uvicorn (por defecto 8000)
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash app \
+    && chown -R app:app /app
+USER app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port
 EXPOSE 8000
 
-# Comando por defecto para iniciar la app (ajusta si tu entrypoint cambia)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run application
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

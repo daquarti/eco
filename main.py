@@ -2,23 +2,88 @@ import os
 import shutil
 import tempfile
 import zipfile
-from typing import List
+import logging
+import time
+from typing import List, Dict, Any
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from docx import Document
 from docxtpl import DocxTemplate
 
 from template_manager import template_selector
-from patient_data_extraction import extract_patient_info, image_extractor, generate_motility_report, get_measure_table, get_measurements, get_mot_table, mot_extractor
+from patient_data_extraction import extract_patient_info, image_extractor, generate_motility_report, get_measure_table, get_measurements, get_mot_table, mot_extractor, process_pdf_images
 from aux_calculations import expand_dict_with_lists_inplace, calc_e_e_stress
+from pdf_processor import pdf_to_docx_data, format_for_template
 
-app = FastAPI()
+app = FastAPI(
+    title="EcoReport API",
+    description="API para generación de informes médicos desde archivos Word/PDF",
+    version="2.0.0"
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @app.get("/")
 def root():
-    return {"message": "API eco3 está activa"}
+    return {"message": "API eco3 está activa", "version": "2.0.0", "status": "running"}
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint for monitoring"""
+    try:
+        # Check if Gemini API key is configured
+        gemini_configured = bool(os.getenv('GOOGLE_API_KEY') and
+                                os.getenv('GOOGLE_API_KEY') != 'your_gemini_api_key_here')
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "healthy",
+                "timestamp": time.time(),
+                "services": {
+                    "pdf_processing": True,
+                    "word_processing": True,
+                    "gemini_llm": gemini_configured
+                }
+            }
+        )
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "timestamp": time.time(),
+                "error": str(e)
+            }
+        )
+
+@app.get("/info")
+def system_info():
+    """System information endpoint"""
+    return {
+        "name": "EcoReport API",
+        "version": "2.0.0",
+        "supported_formats": [".docx", ".doc", ".pdf"],
+        "features": {
+            "word_processing": True,
+            "pdf_processing": True,
+            "gemini_llm": bool(os.getenv('GOOGLE_API_KEY')),
+            "batch_processing": True,
+            "image_extraction": True,
+            "motility_analysis": True
+        },
+        "endpoints": {
+            "single_file": "/generar_informe",
+            "multiple_files": "/generar_informes_multiples",
+            "debug": "/debug_files",
+            "health": "/health"
+        }
+    }
 
 @app.options("/generar_informes_multiples")
 def options_multiple():
@@ -40,16 +105,23 @@ def debug_files(files: List[UploadFile] = File(...)):
     return {
         "total_files": len(files),
         "files": file_info,
-        "valid_files": len([f for f in files if f.filename.lower().endswith(('.doc', '.docx'))]),
+        "valid_files": len([f for f in files if f.filename.lower().endswith(('.doc', '.docx', '.pdf'))]),
         "message": "Debug info - no processing done"
     }
 
-# Permitir CORS para el frontend
+# Configure CORS - adjust origins for production
+FRONTEND_ORIGINS = [
+    "http://localhost:3000",  # React dev server
+    "http://localhost:5173",  # Vite dev server
+    "https://your-frontend-domain.com",  # Production frontend
+    "*"  # Allow all for development - remove in production
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=FRONTEND_ORIGINS if os.getenv("ENVIRONMENT") == "production" else ["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -57,12 +129,21 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
     """
     Procesa un archivo individual y devuelve la ruta del archivo generado.
     """
-    print(f"[DEBUG] Processing file: {file.filename}")
-    print(f"[DEBUG] Content type: {file.content_type}")
-    print(f"[DEBUG] File size: {file.size if hasattr(file, 'size') else 'unknown'}")
+    logger.info(f"Processing file: {file.filename}")
+    logger.info(f"Content type: {file.content_type}")
+    logger.info(f"File size: {file.size if hasattr(file, 'size') else 'unknown'}")
+
+    # Validate file size (50MB limit)
+    MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+    if hasattr(file, 'size') and file.size and file.size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"Archivo demasiado grande. Máximo: 50MB")
+
+    # Validate filename
+    if not file.filename or len(file.filename) > 255:
+        raise HTTPException(status_code=400, detail="Nombre de archivo inválido")
     
-    if not (file.filename.lower().endswith(".docx") or file.filename.lower().endswith(".doc")):
-        raise HTTPException(status_code=400, detail=f"El archivo {file.filename} debe ser .docx o .doc")
+    if not (file.filename.lower().endswith(".docx") or file.filename.lower().endswith(".doc") or file.filename.lower().endswith(".pdf")):
+        raise HTTPException(status_code=400, detail=f"El archivo {file.filename} debe ser .docx, .doc o .pdf")
 
     # Extract just the filename without path for security and compatibility
     safe_filename = os.path.basename(file.filename)
@@ -145,17 +226,55 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
         doc_path = input_path
 
     try:
-        doc = Document(doc_path)
-        template, tipo = template_selector(doc_path)
-        info_pac = extract_patient_info(doc)
-        image = image_extractor(doc, template, tipo=tipo)
+        # Handle PDF files differently
+        if doc_path.lower().endswith('.pdf'):
+            logger.info(f"Processing PDF file: {doc_path}")
+
+            # Extract data from PDF
+            pdf_data = pdf_to_docx_data(doc_path)
+
+            # Select template based on PDF content
+            template, tipo = template_selector(doc_path)
+
+            # Format PDF data for template
+            context = format_for_template(pdf_data)
+
+            # Add patient info
+            info_pac = pdf_data.get('patient_info', {})
+
+            # Process images if available
+            if 'images' in pdf_data and pdf_data['images']:
+                image = process_pdf_images(pdf_data['images'], template, tipo)
+                context['image'] = image['image']
+
+            # Add motility if available
+            if 'motility' in pdf_data and pdf_data['motility']:
+                mot = pdf_data['motility']
+                if 'mot' in mot:
+                    mot_report = generate_motility_report(mot)
+                    context.update(mot_report)
+
+            # Clean up temp images
+            if 'images' in pdf_data:
+                import shutil
+                for path in pdf_data['images'].values():
+                    if os.path.exists(os.path.dirname(path)):
+                        shutil.rmtree(os.path.dirname(path), ignore_errors=True)
+        else:
+            # Process DOCX files as before
+            doc = Document(doc_path)
+            template, tipo = template_selector(doc_path)
+            info_pac = extract_patient_info(doc)
+            image = image_extractor(doc, template, tipo=tipo)
+            context = None
         # Nombre de salida temporal
         safe_name = info_pac.get('Name', 'informe').replace('/', '_').replace('\\', '_')
         safe_date = info_pac.get('Exam_Date', 'fecha').replace('/', '_').replace('\\', '_')
         output_filename = f"{safe_name}_{tipo}_{safe_date}.docx"
         save_path = os.path.join(tmpdir, output_filename)
-        
-        if tipo in ['card', 'stress']:
+
+        # If context was already built (PDF case), skip the rest
+        if context is None and tipo in ['card', 'stress']:
             measurements_table = get_measure_table(doc)
             if 'Gender' not in info_pac:
                 print(f"[ERROR] info_pac keys: {list(info_pac.keys())}")
@@ -170,21 +289,44 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
                 context = {**info_pac, **measurements_dic, 'image': image['image'], 'mot': mot['mot'], **mot_report}
             else:
                 context = {**info_pac, **measurements_dic, 'image': image['image']}
-        else:
+        elif context is None:
             context = {**info_pac, 'image': image['image']}
+
+        # Render template with context
         template.render(context)
         template.save(save_path)
         return save_path
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
-        print(f"[ERROR] {tb}")
-        raise HTTPException(status_code=500, detail=f"Error procesando el archivo {file.filename}: {str(e)}\nTraceback:\n{tb}")
+        logger.error(f"Error processing file {file.filename}: {tb}")
+
+        # Return user-friendly error message
+        error_msg = "Error interno del servidor procesando el archivo"
+        if "No se encontró LibreOffice" in str(e):
+            error_msg = "Error de conversión de documento .doc"
+        elif "Falta el dato 'Gender'" in str(e):
+            error_msg = "Falta información requerida en el documento (Gender)"
+        elif "No se encontró tabla" in str(e):
+            error_msg = "Formato de documento no reconocido"
+
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": error_msg,
+                "filename": file.filename,
+                "details": str(e)
+            }
+        )
 
 @app.post("/generar_informe")
 def generar_informe(file: UploadFile = File(...)):
     """
-    Recibe un archivo Word del ecógrafo y devuelve el informe generado como descarga.
+    Recibe un archivo Word o PDF del ecógrafo y devuelve el informe generado como descarga.
+    Soporta archivos .docx, .doc y .pdf.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         save_path = procesar_archivo_individual(file, tmpdir)
@@ -200,7 +342,8 @@ def generar_informe(file: UploadFile = File(...)):
 @app.post("/generar_informes_multiples")
 async def generar_informes_multiples(files: List[UploadFile] = File(...)):
     """
-    Recibe múltiples archivos Word del ecógrafo y devuelve un archivo ZIP con todos los informes generados.
+    Recibe múltiples archivos Word o PDF del ecógrafo y devuelve un archivo ZIP con todos los informes generados.
+    Soporta archivos .docx, .doc y .pdf.
     """
     if not files:
         raise HTTPException(status_code=400, detail="Debe proporcionar al menos un archivo")
