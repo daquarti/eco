@@ -26,25 +26,43 @@ app = FastAPI(
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Safe import for PDF processing
+# Safe import for PDF processing with enhanced fallback
 try:
     from patient_data_extraction import process_pdf_images
     from pdf_processor import pdf_to_docx_data, format_for_template
     PDF_PROCESSING_AVAILABLE = True
-    logger.info("PDF processing modules loaded successfully")
+    logger.info("Standard PDF processing modules loaded successfully")
 except ImportError as e:
-    PDF_PROCESSING_AVAILABLE = False
-    logger.warning(f"PDF processing not available: {e}")
+    logger.warning(f"Standard PDF processing not available: {e}")
 
-    # Create dummy functions
-    def pdf_to_docx_data(pdf_path: str):
-        raise HTTPException(status_code=500, detail="PDF processing not available on this server")
+    # Try enhanced PDF processor as fallback
+    try:
+        from pdf_processor_enhanced import pdf_to_docx_data, format_for_template
+        from patient_data_extraction import process_pdf_images
+        PDF_PROCESSING_AVAILABLE = True
+        logger.info("Enhanced PDF processing modules loaded successfully")
+    except ImportError as e2:
+        PDF_PROCESSING_AVAILABLE = False
+        logger.error(f"No PDF processing modules available: {e2}")
 
-    def format_for_template(pdf_data):
-        raise HTTPException(status_code=500, detail="PDF processing not available on this server")
+        # Create dummy functions that provide clear error messages
+        def pdf_to_docx_data(pdf_path: str):
+            raise HTTPException(
+                status_code=503,
+                detail="PDF processing temporarily unavailable. Missing dependencies: pdfplumber, langextract. Please use .docx files."
+            )
 
-    def process_pdf_images(image_paths, template, tipo):
-        raise HTTPException(status_code=500, detail="PDF processing not available on this server")
+        def format_for_template(pdf_data):
+            raise HTTPException(
+                status_code=503,
+                detail="PDF processing temporarily unavailable. Please use .docx files."
+            )
+
+        def process_pdf_images(image_paths, template, tipo):
+            raise HTTPException(
+                status_code=503,
+                detail="PDF processing temporarily unavailable. Please use .docx files."
+            )
 
 @app.get("/")
 def root():
@@ -223,7 +241,15 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
 
     # Check if PDF processing is available
     if is_pdf and not PDF_PROCESSING_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Procesamiento de PDF no disponible en este momento. Use archivos .docx o .doc")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Procesamiento de PDF no disponible",
+                "message": "El servidor no tiene configuradas las dependencias para procesar archivos PDF",
+                "suggestions": ["Use archivos .docx o .doc", "Contacte al administrador si necesita procesamiento PDF"],
+                "available_formats": [".docx", ".doc"]
+            }
+        )
 
     # Extract just the filename without path for security and compatibility
     safe_filename = os.path.basename(file.filename)
@@ -233,7 +259,9 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
     print(f"[DEBUG] Safe filename: {safe_filename}")
     print(f"[DEBUG] Input path: {input_path}")
     
+    # Save uploaded file to temporary directory
     with open(input_path, "wb") as f:
+        import shutil
         shutil.copyfileobj(file.file, f)
 
     # Si es .doc, convertir a .docx usando LibreOffice
