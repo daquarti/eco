@@ -35,10 +35,29 @@ def template_selector(path)->tuple:
             template_path = os.path.join(base_dir, "auto ven.docx")
             tipo = 'ven'
         else:
-            doc = Document(path)
-            if doc.tables[2].rows[0].cells[0].text == 'WMS':
-                template_path = os.path.join(base_dir, "auto stress.docx")
-                tipo = 'stress'
+            # Check if it's a PDF file
+            if path_str.lower().endswith('.pdf'):
+                # For PDF files, try to determine type from content
+                try:
+                    from pdf_processor import analyze_pdf_content
+                    pdf_content = analyze_pdf_content(path)
+
+                    # Look for WMS indicators in PDF text
+                    full_text = ""
+                    for page in pdf_content:
+                        full_text += " ".join(page.get('text_lines', []))
+
+                    if 'WMS' in full_text.upper() or 'WALL MOTION' in full_text.upper():
+                        template_path = os.path.join(base_dir, "auto stress.docx")
+                        tipo = 'stress'
+                except Exception as e:
+                    print(f"Error analyzing PDF for template selection: {e}, defaulting to 'card'")
+            else:
+                # Handle Word documents as before
+                doc = Document(path)
+                if len(doc.tables) > 2 and doc.tables[2].rows[0].cells[0].text == 'WMS':
+                    template_path = os.path.join(base_dir, "auto stress.docx")
+                    tipo = 'stress'
     except (IndexError, AttributeError) as e:
         print(f"Error: {e}, defaulting to 'card' template.")
 
