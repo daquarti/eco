@@ -13,9 +13,8 @@ from docx import Document
 from docxtpl import DocxTemplate
 
 from template_manager import template_selector
-from patient_data_extraction import extract_patient_info, image_extractor, generate_motility_report, get_measure_table, get_measurements, get_mot_table, mot_extractor, process_pdf_images
+from patient_data_extraction import extract_patient_info, image_extractor, generate_motility_report, get_measure_table, get_measurements, get_mot_table, mot_extractor
 from aux_calculations import expand_dict_with_lists_inplace, calc_e_e_stress
-from pdf_processor import pdf_to_docx_data, format_for_template
 
 app = FastAPI(
     title="EcoReport API",
@@ -26,6 +25,26 @@ app = FastAPI(
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Safe import for PDF processing
+try:
+    from patient_data_extraction import process_pdf_images
+    from pdf_processor import pdf_to_docx_data, format_for_template
+    PDF_PROCESSING_AVAILABLE = True
+    logger.info("PDF processing modules loaded successfully")
+except ImportError as e:
+    PDF_PROCESSING_AVAILABLE = False
+    logger.warning(f"PDF processing not available: {e}")
+
+    # Create dummy functions
+    def pdf_to_docx_data(pdf_path: str):
+        raise HTTPException(status_code=500, detail="PDF processing not available on this server")
+
+    def format_for_template(pdf_data):
+        raise HTTPException(status_code=500, detail="PDF processing not available on this server")
+
+    def process_pdf_images(image_paths, template, tipo):
+        raise HTTPException(status_code=500, detail="PDF processing not available on this server")
 
 @app.get("/")
 def root():
@@ -45,9 +64,9 @@ def health_check():
                 "status": "healthy",
                 "timestamp": time.time(),
                 "services": {
-                    "pdf_processing": True,
+                    "pdf_processing": PDF_PROCESSING_AVAILABLE,
                     "word_processing": True,
-                    "gemini_llm": gemini_configured
+                    "gemini_llm": gemini_configured and PDF_PROCESSING_AVAILABLE
                 }
             }
         )
@@ -71,8 +90,8 @@ def system_info():
         "supported_formats": [".docx", ".doc", ".pdf"],
         "features": {
             "word_processing": True,
-            "pdf_processing": True,
-            "gemini_llm": bool(os.getenv('GOOGLE_API_KEY')),
+            "pdf_processing": PDF_PROCESSING_AVAILABLE,
+            "gemini_llm": bool(os.getenv('GOOGLE_API_KEY')) and PDF_PROCESSING_AVAILABLE,
             "batch_processing": True,
             "image_extraction": True,
             "motility_analysis": True
@@ -142,8 +161,16 @@ def procesar_archivo_individual(file: UploadFile, tmpdir: str) -> str:
     if not file.filename or len(file.filename) > 255:
         raise HTTPException(status_code=400, detail="Nombre de archivo inválido")
     
-    if not (file.filename.lower().endswith(".docx") or file.filename.lower().endswith(".doc") or file.filename.lower().endswith(".pdf")):
+    # Check file extension
+    is_pdf = file.filename.lower().endswith(".pdf")
+    is_doc = file.filename.lower().endswith((".docx", ".doc"))
+
+    if not (is_doc or is_pdf):
         raise HTTPException(status_code=400, detail=f"El archivo {file.filename} debe ser .docx, .doc o .pdf")
+
+    # Check if PDF processing is available
+    if is_pdf and not PDF_PROCESSING_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Procesamiento de PDF no disponible en este momento. Use archivos .docx o .doc")
 
     # Extract just the filename without path for security and compatibility
     safe_filename = os.path.basename(file.filename)
