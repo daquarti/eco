@@ -104,6 +104,59 @@ def system_info():
         }
     }
 
+@app.post("/test_pdf_debug")
+async def test_pdf_debug(file: UploadFile = File(...)):
+    """Debug endpoint to test PDF processing step by step"""
+    import tempfile
+
+    step_info = {"filename": file.filename}
+
+    try:
+        # Step 1: Save file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+
+        step_info["step"] = "file_saved"
+        step_info["tmp_path"] = tmp_path
+
+        # Step 2: Test PDF analysis
+        from pdf_processor import analyze_pdf_content
+        pdf_content = analyze_pdf_content(tmp_path)
+        step_info["step"] = "pdf_analyzed"
+        step_info["pages"] = len(pdf_content)
+
+        # Step 3: Test template selection
+        from template_manager import template_selector
+        template, tipo = template_selector(tmp_path)
+        step_info["step"] = "template_selected"
+        step_info["template_type"] = tipo
+
+        # Step 4: Test data extraction
+        from pdf_processor import pdf_to_docx_data
+        pdf_data = pdf_to_docx_data(tmp_path)
+        step_info["step"] = "data_extracted"
+        step_info["data_keys"] = list(pdf_data.keys())
+
+        # Cleanup
+        os.unlink(tmp_path)
+
+        step_info["success"] = True
+        return step_info
+
+    except Exception as e:
+        if 'tmp_path' in locals():
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
+
+        step_info["success"] = False
+        step_info["error"] = str(e)
+        step_info["error_type"] = type(e).__name__
+        return step_info
+
 @app.options("/generar_informes_multiples")
 def options_multiple():
     return {"message": "CORS preflight OK"}
